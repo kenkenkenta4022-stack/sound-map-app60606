@@ -2,15 +2,18 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title> Sound Walk HAKODATE AI </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>函館 AI サウンド散歩マップ</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; }
+    html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; }
     
-    #app-container { display: flex; width: 100vw; height: 100vh; }
+    #app-container { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
     
+    /* PC表示 */
     #sidebar { width: 380px; min-width: 380px; height: 100%; padding: 20px; overflow-y: auto; background: #ffffff; display: flex; flex-direction: column; gap: 16px; border-right: 1px solid #e2e8f0; box-shadow: 2px 0 8px rgba(0,0,0,0.05); z-index: 10; }
+    #map { flex: 1; width: 100%; height: 100%; background: #e2e8f0; }
+
     h1 { font-size: 20px; margin: 0; color: #0284c7; display: flex; align-items: center; gap: 8px; }
     .section-title { font-size: 13px; font-weight: bold; color: #64748b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
     
@@ -30,15 +33,22 @@
     .card-title { font-weight: bold; font-size: 15px; color: #0f172a; margin-bottom: 4px; }
     .card-desc { font-size: 12px; color: #64748b; }
     
-    #map { flex: 1; width: 100%; height: 100%; background: #e2e8f0; }
-    #aiResult { background: #f0f9ff; border: 1px solid #0284c7; padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; color: #0369a1; display: none; }
+    #aiResult { background: #f0f9ff; border: 1px solid #0284c7; padding: 12px; border-radius: 8px; font-size: 13px; line-height: 1.5; color: #0369a1; display: none; margin-top: 10px; }
+
+    /* 📱 スマホ用レスポンシブデザイン（画面幅 768px 以下） */
+    @media (max-width: 768px) {
+      #app-container { flex-direction: column-reverse; }
+      #map { height: 50vh; width: 100vw; }
+      #sidebar { width: 100vw; min-width: 100vw; height: 50vh; padding: 16px; border-right: none; border-top: 2px solid #e2e8f0; border-radius: 16px 16px 0 0; }
+      h1 { font-size: 18px; }
+    }
   </style>
 </head>
 <body>
 
 <div id="app-container">
   <div id="sidebar">
-    <h1> Sound Walk HAKODATE AI</h1>
+    <h1>🔊 函館サウンドマップ AI</h1>
 
     <!-- 条件選択 -->
     <div>
@@ -100,13 +110,13 @@
   let markers = [];
   let routePolyline;
 
-  // 地図の初期化
   function initMap() {
     const mapElement = document.getElementById("map");
     
     map = new google.maps.Map(mapElement, {
       center: { lat: 41.775, lng: 140.730 },
-      zoom: 13
+      zoom: 13,
+      gestureHandling: "greedy" // スマホでの地図操作（スワイプ）をスムーズにする設定
     });
 
     document.querySelectorAll('.tag').forEach(tag => {
@@ -119,7 +129,6 @@
     renderSpots();
   }
 
-  // ピンとリストを描画
   function renderSpots() {
     markers.forEach(m => m.setMap(null));
     markers = [];
@@ -166,7 +175,6 @@
     });
   }
 
-  // Gemini AIでコース生成
   async function generateAiCourse() {
     const mood = document.getElementById("moodInput").value.trim() || "人混み";
     const walkTime = document.getElementById("timeSelect").value;
@@ -182,7 +190,7 @@
     あなたは函館の観光・散歩コースのエキスパートです。
     ユーザーの気分: 「${mood}」
     散歩時間: 約 ${walkTime} 分間
-    選択された音要素: ${activeTags}
+    选择された音要素: ${activeTags}
     
     以下のスポット候補から、必ず【2〜4箇所】選択しておすすめの巡り順と解説を作成してください。
     スポット候補: ${JSON.stringify(SPOTS_DATA.map(s => ({ id: s.id, title: s.title, desc: s.desc, lat: s.lat, lng: s.lng })))}
@@ -229,14 +237,12 @@
     }
   }
 
-  // OSRM (Open Source Routing Machine) APIを使って実際の道沿い経路を取得・描画
   async function fetchOsrmRoadRoute(routeIds) {
     if (routePolyline) routePolyline.setMap(null);
 
     const selectedSpots = (routeIds || []).map(id => SPOTS_DATA.find(s => s.id === id)).filter(Boolean);
     if (selectedSpots.length < 2) return;
 
-    // OSRMは 経度(lng),緯度(lat) の順番で渡す必要があります
     const coordinatesStr = selectedSpots.map(s => `${s.lng},${s.lat}`).join(';');
     const osrmUrl = `https://router.project-osrm.org/route/v1/foot/${coordinatesStr}?overview=full&geometries=geojson`;
 
@@ -245,7 +251,6 @@
       const resData = await res.json();
 
       if (resData.code === 'Ok' && resData.routes.length > 0) {
-        // OSRMから返された道路に正確に沿った座標配列（[lng, lat]）
         const routeCoords = resData.routes[0].geometry.coordinates;
         const path = routeCoords.map(coord => ({ lat: coord[1], lng: coord[0] }));
 
@@ -259,7 +264,6 @@
 
         routePolyline.setMap(map);
 
-        // 道路全体が収まるようにカメラ画角を調整
         const bounds = new google.maps.LatLngBounds();
         path.forEach(p => bounds.extend(p));
         map.fitBounds(bounds);
@@ -270,7 +274,6 @@
   }
 </script>
 
-<!-- Google Maps Script -->
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA3lI6MvfcK1aruEOyGFRmvhKjRrBFmQqU&callback=initMap&loading=async" async defer></script>
 </body>
 </html>
